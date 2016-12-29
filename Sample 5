@@ -1,3 +1,8 @@
+#This code was created to determine if certain incidents happened during school seasons compared to out of school seasons.
+#This one in particular is looking at the local colleges being insession. 
+
+################################################################################################################################
+
 #define directory and libraries
   setwd("J:\\Risk Management\\Kevin\\O1 - Fare Disputes")
   library(plyr)
