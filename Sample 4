@@ -1,3 +1,8 @@
+#The purpose of this code is to determine if the seniority of operators made a difference in the accidents involved or in 
+#certain buses played a role in the accidents. 
+
+
+
 ################################   Set Directory, Import Data   ##############################################
 
 #set work directory
