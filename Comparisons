@@ -1,0 +1,216 @@
+################################   Set Directory, Import Data   ##############################################
+
+#set work directory
+  setwd("J:/Risk Management/Kevin/New Ops and 2900s")
+
+#import file
+  ops <- read.table("J:/Risk Management/Kevin/New Ops and 2900s/New Ops and 2900s.csv",
+                    header = TRUE, sep = ",")
+
+  new <- read.table("J:/Risk Management/Kevin/New Ops and 2900s/New Ops.csv",
+                    header = TRUE, sep = ",")
+
+#convert variables to factors and drop rating
+  ops$route <- as.factor(ops$route)                                            #set route as factor 
+  ops$year  <- as.factor(ops$year)                                             #set year as factor
+  ops$rat   <- NULL                                                            #remove the rat variable
+
+#subset ops data to not include passenger falls (categories I, J, K)
+  exclude <- c("I", "J", "K")                                                  #list of cat variables to not include
+  ops1    <- subset(ops, !(ops$cat %in% exclude))                              #subset of ops without excluded categories
+
+
+
+########################   New Op vs Vet Op - All Accidents   ###############################################
+
+#data subset of only accidents for new drivers (2 years or less)
+
+  twoyears   <- ops1[ops1$empnum %in% new$empnum,]                             #chooses the rows from ops where the empnum matches new empnum
+  uniq       <- unique(twoyears$empnum)                                        #determines the unique values in 
+  uniqlength <- length(uniq)                                                   #the number of unique empnum values
+
+#create data frame with summary of number of accidents by empnum for new operators
+  summoper1           <- as.data.frame(table(twoyears$empnum),                 #creates data frame of empnum with only two years experience
+                            row.names = NULL, stringsAsFactors = TRUE)
+  colnames(summoper1) <- c("empnum", "count")                                  #renames columns of summoper1
+  summoper1$new       <- "yes"                                                 #creates variable indicating new operators
+
+#data subset of only accidents for veteran drivers and random sample
+  vet     <- ops1[!(ops1$empnum %in% new$empnum),]                             #takes all empnum not in new data set
+  use     <- sample(unique(vet$empnum), uniqlength)                            #determine the 65 unique empnum to use
+  vetsamp <- vet[vet$empnum %in% use,]                                         #takes random sample of veteran empnum
+
+#create data frame with summary of number of accidents by empnum for vet operators
+  summoper2           <- as.data.frame(table(vetsamp$empnum),                  #creates data frame with empnum with only vet operators
+                             row.names = NULL, stringsAsFactors = TRUE)
+  colnames(summoper2) <- c("empnum", "count")                                  #renames columns of summoper2
+  summoper2$new       <- "no"                                                  #creates variable indicating vet operators
+
+#merge the two data sets together
+  final     <- rbind(summoper1, summoper2)                                     #merges new oper and vet oper data frames
+  final$new <- as.factor(final$new)                                            #makes variable new a factor  
+
+#summary of data
+  summary(summoper1)                                                           #summary data for new operators
+  summary(summoper2)                                                           #summary data for vet operators
+  summary(final)                                                               #summary data for combined new and vet operators
+
+#% of operators with more then one accident
+  length(summoper1$count[summoper1$count > 1])/length(summoper1$count)*100     #counts number of new operators with more than one accident and
+                                                                               #divides by number of new oper with an accident to get a percent
+  length(summoper2$count[summoper2$count > 1])/length(summoper2$count)*100     #counts number of vet oper with more than one accident and 
+                                                                               #divides by number of vet oper with an accident to get a percent
+  length(final$count[final$count > 1])/length(final$count)*100                 #counts number of oper with more than one accident and divides
+                                                                               #by number of oper with at least one accident to get a percent
+
+#ANOVA for accidents to check if different by empnum
+  accfit <- aov(count ~ new, data = final)                                     #determines model that with factor of new oper
+  summary(accfit)                                                              #ANOVA for model with factor of new employee
+
+
+
+#########################   New Op vs Vet Op - Preventables   ################################################
+
+#data subset of only prev accidents for new drivers (2 years or less)
+  twoyearsp  <- ops1[ops1$empnum %in% new$empnum,]                             #chooses the rows from ops where the empnum matches new empnum
+  twoyearsp  <- subset(twoyearsp, twoyearsp$prev == "Y")                       #take only preventables
+  uniq       <- unique(twoyearsp$empnum)                                       #determines the unique values in 
+  uniqlength <- length(uniq)                                                   #the number of unique empnum values
+
+#create data frame with summary of number of prev accidents by empnum for new operators
+  summoper1p           <- as.data.frame(table(twoyearsp$empnum),               #creates data frame of number of prev accidents by empnum for new oper
+                           row.names = NULL, stringsAsFactors = TRUE)
+  colnames(summoper1p) <- c("empnum", "count")                                 #renames columns of summoper1p
+  summoper1p$new       <- "yes"                                                #creates new variable indicating employees are new
+
+#data subset of only prev accidents for veteran drivers and random sample
+  vetp     <- ops1[!(ops1$empnum %in% new$empnum),]                            #takes all empnum not in new data set
+  vetp     <- subset(vetp, vetp$prev == "Y")                                   #take only the preventable accidents
+  usep     <- sample(unique(vetp$empnum), uniqlength)                          #determine the 65 unique empnum to use
+  vetsampp <- vetp[vetp$empnum %in% usep,]                                     #takes random sample of veteran empnum
+
+#create data frame with summary of number of prev accidents by empnum for vet operators
+  summoper2p           <- as.data.frame(table(vetsampp$empnum),                #creates data frame of number of prev accidents by empnum for vet oper
+                             row.names = NULL, stringsAsFactors = TRUE)
+  colnames(summoper2p) <- c("empnum", "count")                                 #renames columns of summoper1p
+  summoper2p$new       <- "no"                                                 #creates new variable indicating employees are vets
+
+#merge the two data sets together
+  finalp     <- rbind(summoper1p, summoper2p)                                  #combines both new and vet oper
+  finalp$new <- as.factor(finalp$new)                                          #makes variable new a factor  
+
+#summary of data
+  summary(summoper1p)                                                          #summary of preventable accidents by new oper
+  summary(summoper2p)                                                          #summary of preventable accidents by vet oper
+  summary(finalp)                                                              #summary of preventable accidents for new and vet oper combined
+
+#% of operators with more then one prev accident
+  length(summoper1p$count[summoper1p$count > 1])/length(summoper1p$count)*100  #determines percent of new oper with more than 1 preventable
+  length(summoper2p$count[summoper2p$count > 1])/length(summoper2p$count)*100  #determines percent of vet oper with more than 1 preventable
+  length(finalp$count[finalp$count > 1])/length(finalp$count)*100              #determines percent of new and Vet oper with more than 1 preventable
+
+#ANOVA for accidents to check if different by empnum
+  accfitp <- aov(count ~ new, data = finalp)                                   #defines the model for preventable accidents by empnum
+  summary(accfitp)                                                             #ANOVA for preventable accidents model
+
+
+
+######################   2900 vs Others - All Accidents  #####################################################
+
+#create subset of data with only accidents for 2900s
+  x2900s       <- subset(ops1, ops1$busnum >= 2900 & ops1$busnum < 3000)       #subset of data with only 2900 buses
+  x2900s$count <- 1                                                            #assigns an accident to each record
+
+#create data frame with summary of number of accidents by bus number for 2900s
+  summ2900s           <- as.data.frame(table(x2900s$busnum),                   #creates summary data frame of accidents by busnum
+                            row.names = NULL, stringsAsFactors = TRUE)
+  colnames(summ2900s) <- c("busnum", "count")                                  #renames columns of data frame
+  summ2900s$x2900     <- "yes"                                                 #assigns new variable to indicate it is a 2900 bus
+  
+#determine the number of 2900 buses involved in accidents
+  num2900s <- length(unique(x2900s$busnum))                                    #number of unique 2900 buses in accidents
+
+#create subset of data with only accidents for all non 2900s and without cars
+  others <- subset(ops, ops$busnum >1000 &                                     #data frame for all buses that aren't 2900s and excluding car accidents
+                    (ops$busnum < 2900 | ops$busnum > 3000))
+   
+#random sample of length num2900s for all other buses
+  usebusnum        <- sample(unique(others$busnum), num2900s)                  #random sample of all non2900 buses that is the same length as unqiue number of 2900s involved in accident
+  busnumsamp       <- others[others$busnum %in% usebusnum,]                    #create data set of only buses from random sample
+  busnumsamp$count <- 1                                                        #assign an accident to each incident
+
+#create data frame with summary of number of accidents by bus number for others
+  summothers           <- as.data.frame(table(busnumsamp$busnum),              #data frame for summary of accidents for non2900 bus numbers
+                              row.names = NULL, stringsAsFactors = TRUE)
+  colnames(summothers) <- c("busnum", "count")                                 #rename columns of data frame
+  summothers$x2900     <- "no"                                                 #new variable indicating not a 2900 bus
+
+#combine the two data sets into one
+  final2900       <- rbind(summ2900s, summothers)                              #combine data frames for 2900 buses and non2900 buses
+  final2900$x2900 <- as.factor(final2900$x2900)                                #make 2900 variable a factor
+
+#summary of data
+  summary(summ2900s)                                                           #summary info for 2900 buses
+  summary(summothers)                                                          #summary info for non2900 bues
+  summary(final2900)                                                           #summary info for both 2900 and non2900 buses combined
+
+#% of buses with more then one accident
+  length(summ2900s$count[summ2900s$count > 1])/length(summ2900s$count)*100     #percent of 2900 buses with more than one accident
+  length(summothers$count[summothers$count > 1])/length(summothers$count)*100  #percent of non2900 buses with more than one accident
+  length(final2900$count[final2900$count > 1])/length(final2900$count)*100     #percent of buses with more than one accident
+
+#fit models and run anovas
+  x2900fit <- aov(count ~ x2900, data = final2900)                             #model with 2900 buses as factor
+  summary(x2900fit)                                                            #ANOVA for 2900 bus model
+
+
+
+######################   2900 vs Others - Prev Accidents  ##############################
+
+#create subset of data with only prev accidents for 2900s
+  x2900sp       <- subset(ops1, ops1$busnum >= 2900 &                          #subset of preventable accidents for 2900 buses 
+                                ops1$busnum < 3000 & ops1$prev == "Y")
+  x2900sp$count <- 1                                                           #assign a count of one for each prev accident for 2900 buses
+
+#create data frame with summary of number of prev accidents by bus number for 2900s
+  summ2900sp           <- as.data.frame(table(x2900sp$busnum),                 #data frame summary by busnum for 2900 prev accidents
+                            row.names = NULL, stringsAsFactors = TRUE)
+  colnames(summ2900sp) <- c("busnum", "count")                                 #rename columns in summary data frame
+  summ2900sp$x2900     <- "yes"                                                #create variable indicating 2900 bus
+
+#determine the number of 2900 buses involved in prev accidents
+  num2900sp <- length(unique(x2900sp$busnum))                                  #determine the number of unique 2900 buses with prev accident
+
+#create subset of data with only prev accidents for all non 2900s and without cars
+  othersp <- subset(ops, ops$busnum >1000 &                                    #subset of prev accidents for non2900 buses excluding cars   
+                         (ops$busnum < 2900 | ops$busnum > 3000) & 
+                         ops$prev == "Y")
+   
+#random sample of length num2900s for all other buses
+  usebusnump        <- sample(unique(othersp$busnum), num2900sp)               #random sample of unqiue non2900 buses of the same length as unique 2900 buses
+  busnumsampp       <- othersp[othersp$busnum %in% usebusnump,]                #create data frame with only non2900 buses from random sample
+  busnumsampp$count <- 1                                                       #add a count of 1 prev accident to each occurence
+
+#create data frame with summary of number of prev accidents by bus number for others
+  summothersp           <- as.data.frame(table(busnumsampp$busnum),            #summary table of number of prev acc by busnum for non2900s
+                              row.names = NULL, stringsAsFactors = TRUE)
+  colnames(summothersp) <- c("busnum", "count")                                #rename columns in non2900 data frame
+  summothersp$x2900     <- "no"                                                #create variable indicating non2900 bus
+
+#combine the two data sets into one
+  final2900p       <- rbind(summ2900sp, summothersp)                           #combine 2900 and non2900 data frame
+  final2900p$x2900 <- as.factor(final2900p$x2900)                              #make whether 2900 bus or not variable a factor
+
+#summary of data
+  summary(summ2900sp)                                                          #summary data for 2900 buses prev accidents
+  summary(summothersp)                                                         #summary data for non2900 buses prev accidents
+  summary(final2900p)                                                          #summary data for all buses prev accidents
+
+#% of buses with more then one accident
+  length(summ2900sp$count[summ2900sp$count > 1])/length(summ2900sp$count)*100    #percent of 2900 buses with more than one prev
+  length(summothersp$count[summothersp$count > 1])/length(summothersp$count)*100 #percent of non2900 buses with more than one prev
+  length(final2900p$count[final2900p$count > 1])/length(final2900p$count)*100    #percent of buses with more than one prev
+
+#fit models and run anovas
+  x2900fitp <- aov(count ~ x2900, data = final2900p)                           #model based on 2900 buses
+  summary(x2900fitp)                                                           #ANOVA for 2900 vs non2900 buses
