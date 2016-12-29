@@ -1,0 +1,212 @@
+#This code was created to analyze different statistics and trends involving over 200,000 data points to try and
+#determine if the company is making money or losing money with their 30 day regular passes. 
+
+
+
+################################################################################################################
+#####################################   30 Day Regular Passes   ################################################
+################################################################################################################
+
+
+
+#####################################   Set Directory and Import Data   #########################################
+
+#set work directoryn and libraries
+  setwd("J:/Risk Management/Kevin/TAP Data")                                                                                #set work directory and call needed libraries
+  library(magrittr)
+  library(dplyr)
+  
+#import data table
+  tap <- read.table("J:/Risk Management/Kevin/TAP Data/TAP Data.csv", header = TRUE, sep = ",",                             #imports CSV file to be used for all analysis
+                    colClasses = "character")                                                                               #and defines all classes as characters
+
+#convert variable types
+  tap$trans_date     <- as.Date(tap$trans_date, format = "%m/%d/%Y")                                                        #converts variable types for needed variables
+  tap$bus_id         <- as.factor(tap$bus_id)
+  tap$eis_serial_nbr <- as.factor(tap$eis_serial_nbr)
+  tap$trans_hour     <- as.numeric(tap$trans_hour)
+  tap$trans_min      <- as.numeric(tap$trans_min)
+  tap$trans_sec      <- as.numeric(tap$trans_sec)
+
+#create decimal time variable
+  tap$timedec        <- ifelse(tap$trans_hour == "12" & tap$trans_ampm == "AM", 					                                  #calculates time as decimal based on time and am or pm
+                               round(as.numeric(tap$trans_min/60 + tap$trans_sec/3600), digits = 2),                        #handles the case of midnight being 0 hour
+                        ifelse(tap$trans_hour == "12" & tap$trans_ampm == "PM",                                             #handles the came of the noon hour
+                               round(as.numeric(tap$trans_hour + tap$trans_min/60 + tap$trans_sec/3600), 
+                               digits = 2),                                                                                
+                        ifelse(tap$trans_hour >= 1 & tap$trans_hour <= 11 & tap$trans_ampm == "AM",                         #handles the AM hours from 1 to 11
+                               round(as.numeric(tap$trans_hour + tap$trans_min/60 + tap$trans_sec/3600), 
+                               digits = 2),                                                               
+                        ifelse(tap$trans_hour >= 1 & tap$trans_hour <= 11 & tap$trans_ampm == "PM",                         #handles the PM hours from 1 to 11
+                               round(as.numeric((tap$trans_hour + 12) + tap$trans_min/60 
+                                            + tap$trans_sec/3600), digits = 2), " ")))) 
+
+  tap$timedec        <- ifelse(tap$timedec == 24.00, 23.99, tap$timedec)                                                    #fixes issue of timedec rounded up to 24, which does not exist
+
+
+
+####################################   Subset Data and Select Columns   #######################################
+
+#subset tap data to only include 30 day regular pass
+  tap30dr         <- subset(tap, fare.category == "30 Day Regular",                                                         #takes the subset of data that is only 30 day regular passes
+                            select = c("trans_date", "bus_id", "fare.category", "eis_serial_nbr", "timedec"))
+  tap30dr$timedec <- as.numeric(tap30dr$timedec)
+
+#create variable to represent the day of the week for each date
+  tap30dr$day     <- as.factor(weekdays(tap30dr$trans_date))                                                                #create a day variable for each entry
+
+#assign a value of one use to each entry
+  tap30dr$count   <- 1
+
+
+
+##################################   Uses Per Day Stats   #####################################################
+
+  usespd             <- setNames(aggregate(tap30dr$count, list(tap30dr$eis_serial_nbr, tap30dr$trans_date),                 #summarizes data by tap id number and the date
+                                 FUN = sum, drop = FALSE),
+                                 c("eis_serial_nbr", "date", "count"))
+
+  summary(usespd)                                                                                                   
+
+  usespdfreq         <- setNames(as.data.frame(table(usespd$count)), c("# of Uses Per Day", "freq"))                        #calculates the freq for number of uses per day
+  usespdfreq$percent <- round(prop.table(usespdfreq$freq)*100, digits = 2)                                                  #calculates the percentage for each number of uses
+                                                                                                                            #these includes tap cards not used at all           
+  usespdfreq
+
+  usespdt            <- setNames(aggregate(tap30dr$count, list(tap30dr$eis_serial_nbr, tap30dr$trans_date),
+                                 FUN = sum, drop = TRUE),
+                                 c("eis_serial_nbr", "date", "count"))
+
+  summary(usespdt)
+
+  usespdtfreq         <- setNames(as.data.frame(table(usespdt$count)), c("# of Uses Per Day", "freq"))                      #calculates the freq for number of uses per day
+  usespdtfreq$percent <- round(prop.table(usespdtfreq$freq)*100, digits = 2)                                                #calculates the percentage for each number of uses
+                                                                                                                            #these do not include tap cards not used at all  
+  usespdtfreq
+
+
+
+######################################   Weekday vs Weekend Stats   ##########################################
+
+  tap30drw <- within(tap30dr, {                                                                                             #create a new data set from tap30dr with a new column
+                                                                                                                            #indicating whether the day of the week is a weekday
+                     weekend <- NA                                                                                          #or a weekend
+
+                     weekend[day == "Monday"    | 
+                             day == "Tuesday"   | 
+                             day == "Wednesday" |
+                             day == "Thursday"  | 
+                             day == "Friday"]      <- "weekday"
+                     weekend[day == "Saturday"  | 
+                             day == "Sunday"]      <- "weekend"
+                    })
+
+  tap30drw$weekend <- as.factor(tap30drw$weekend)                                                                           #convert the weekend variable to a factor
+
+#Keep users that didn't use pass at all
+
+  usesweek            <- setNames(aggregate(tap30drw$count, list(tap30drw$eis_serial_nbr, tap30drw$weekend),                #sums the number of TAPs by the ID number and by           
+                                 FUN = sum, drop = FALSE),                                                                  #whether it was a weekend or weekday
+                                 c("eis_serial_nbr", "weekend", "count"))
+  usesweekday         <- subset(usesweek, usesweek$weekend == "weekday")                                                    #creates subset of data with only weekday data
+  usesweekend         <- subset(usesweek, usesweek$weekend == "weekend")                                                    #creates subset of data with only weekend data
+
+  #there were 86 working days and 36 non-working days between 6/1/2016 & 9/30/2016
+
+  usesweekday$perday  <- usesweekday$count/86                                                                               #calculates the number of uses perday for weekdays based
+                                                                                                                            #on 86 working days between 6/1/2016 & 9/30/2016
+  usesweekend$perday  <- usesweekend$count/36                                                                               #calculates the number of uses perday for weekends based
+                                                                                                                            #on 36 non-working days between 6/1/2016 & 9/30/2016
+  summary(usesweekday)                                                                                                   
+  summary(usesweekend)
+
+  dev.new()
+  plot(usesweekday$perday, col = "darkgreen", pch = 1,                                                                      #creates a scatter plot of uses per day for weekdays in green
+       main = "Uses Per Weekday by ID Index", xlab = "ID Index", ylab = "Uses Per Weekday")
+
+  dev.new()
+  plot(usesweekend$perday, col = "blue", pch = 1,                                                                           #creates a scatter plot of uses per day for weekends in blue
+       main = "Uses Per Weekend Day by ID Index", xlab = "ID Index", ylab = "Uses Per Weekend Day")
+
+
+
+#####################################   Time of Day Usage   #################################################
+
+#analyze time of day for all 30 day passes
+  tap30dr$hour      <- floor(tap30dr$timedec)                                                                               #creates a variable hour defined as the whole number of time
+  numofeisnbrs      <- length(unique(tap30dr$eis_serial_nbr))                                                               #determines the number of unique ID numbers in the set
+  timeofday         <- setNames(aggregate(tap30dr$count, list(tap30dr$hour), FUN = sum, drop = FALSE),                      #sums the number of TAPs by hour of day
+                               c("hour", "count"))
+  timeofday$perday  <- timeofday$count/(86+36)                                                                              #creates variable for number per day based on number of days
+                                                                                                                            #between 6/1/2016 & 9/30/2016
+  timeofday$peruser <- timeofday$perday/numofeisnbrs                                                                        #creates variable to represent number of uses perday by each
+                                                                                                                            #unique user
+
+  timeofday
+  summary(timeofday)
+
+#analyze time of day by weekdays and weekends  
+  tap30drw$hour        <- floor(tap30drw$timedec)                                                                           #creates a variable to represent the whole number part of time
+  timeofweekday        <- setNames(aggregate(tap30drw$count, list(tap30drw$hour, tap30drw$weekend),                         #create data frame of counts by hour and wheter a weekend or not
+                                   FUN = sum, drop = FALSE), 
+                                   c("hour","weekend","count"))
+
+  timeofweekday$perday <- ifelse(timeofweekday$weekend == "weekend",                                                        #determine perday uses based on whether a weekend or not
+                                 timeofweekday$count/36, timeofweekday$count/86)
+
+  timeofweekend        <- subset(timeofweekday, weekend == "weekend")                                                       #take a subset of timeofweekday with only weekend days included
+  timeofweekday        <- subset(timeofweekday, weekend == "weekday")                                                       #take a subset of timeofweekday with only weekdays included
+  timeofweekday
+  summary(timeofweekday)
+  timeofweekend
+  summary(timeofweekend)
+
+
+
+###################################   One Hour Increment Uses   ##############################################
+
+  tap30drw        <- tap30drw %>%                                                                                          #count the number of times a TAP card was used within an hour
+                      group_by(eis_serial_nbr, trans_date) %>%                                                             #(forward or backward) for each ID and date
+                       arrange(timedec) %>%                                                                                #orders the dataframe by timedec
+                        mutate(close = findInterval(timedec + 1, timedec) - findInterval(timedec - 1, timedec) - 1)        #finds the distance between max hour up and down and removes 
+                                                                                                                           #the one counted as itself
+
+  summary(tap30drw$close)                                                                                                  #summary of how many taps are within hour (each way) of another
+
+  freqclose       <- setNames(aggregate(tap30drw$count, list(tap30drw$close),                                              #number of times each close number appears
+                        FUN = sum, drop = FALSE), 
+                        c("close", "count"))  
+  freqclose$perc  <- round(freqclose$count/sum(freqclose$count), digits = 4)*100                                           #creates a percentage for each close number
+  freqclose
+  todclose        <- setNames(aggregate(tap30drw$count, list(tap30drw$hour),                                               #number of multiple taps within an hour for each hour of the day
+                            FUN = sum, drop = FALSE), 
+                            c("hour", "count"))  
+
+  todcloseweekday <- setNames(aggregate(tap30drw$count, list(tap30drw$hour, tap30drw$weekend),                             #number of multiple taps within an hour for each hour and day type
+                              FUN = sum, drop = FALSE),
+                              c("hour", "weekend", "count"))
+
+  todcloseweekend <- subset(todcloseweekday, weekend == "weekend")                                                         #creates subset of only weekend days
+  todcloseweekday <- subset(todcloseweekday, weekend == "weekday")                                                         #creates subset of only weekdays
+
+  summary(todclose)
+  todclose  
+  summary(todcloseweekday)
+  todcloseweekday
+  summary(todcloseweekend)
+  todcloseweekend
+
+  dateclose       <- setNames(aggregate(tap30drw$count, list(tap30drw$trans_date),                                         #number of multiple taps by date
+                            FUN = sum, drop = FALSE), 
+                            c("date", "count"))  
+  summary(dateclose)
+
+  dev.new()
+  plot(dateclose$date, dateclose$count, type = "h", col = "deeppink",                                                      #creates a histogram of date vs count of multiple TAPs 
+       xlab = "Date", ylab = "Number of TAPs Within Hour", main = "Number of TAPs Within Hour by Date")
+
+  dayclose        <- setNames(aggregate(tap30drw$count, list(tap30drw$day),                                                #number of multiple taps by day
+                            FUN = sum, drop = FALSE), 
+                            c("day", "count")) 
+  summary(dayclose)
+  dayclose
