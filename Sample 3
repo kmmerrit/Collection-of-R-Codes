@@ -1,0 +1,152 @@
+#This code was created to help analyze the time of day accidents were happening.
+
+
+###########################   Set Directory and Import Files   ####################################################
+
+#set directory and libraries
+  setwd("J:/Risk Management/Kevin/Shift Time Analysis")
+  library(plotrix)
+
+#import data file to check if routes are significant
+  acc <- read.table("FY16 Preventable Accidents - Time Analysis.csv", header=TRUE, sep=",")
+
+
+
+###########################   Clean up data and create new variables ##############################################
+
+#keep only the relevant columns
+  acc <- subset(acc, select = c("hourofday", "busnum", "class", "route", 
+                                "classlet", "servchng", "day", "dutytype", 
+                                "hourofshift", "hourofcurr", "dectime", 
+                                "dectimefromstart", "deccurr"))
+
+#create variable for bus type and define it
+  acc <- within(acc, {
+                bustype <- NA
+ 
+                bustype[busnum >= "1200" & busnum < "1600"] <- "CNG"
+                bustype[busnum >= "2300" & busnum < "3000"] <- "hybrid"
+                bustype[busnum >= "9200" & busnum < "9900"] <- "diesel"
+                bustype[busnum >= "2000" & busnum < "2300"] <- "diesel"
+               })
+
+#change all variables to the correct type 
+  acc$hourofday   <- as.factor(acc$hourofday)
+  acc$route       <- as.factor(acc$route)
+  acc$bustype     <- as.factor(acc$bustype)
+  acc$hourofshift <- as.factor(acc$hourofshift)
+  acc$hourofcurr  <- as.factor(acc$hourofcurr)
+
+#create count variable and define it
+  acc$count <- 1
+
+
+
+###########################   Create bubble chart for day and dutytype by count   ############################
+
+#Create a bubble chart for day and duty type with size of circle representative of number there
+  dev.new()
+  dayduty <- setNames(aggregate(acc$count, list(acc$day, acc$dutytype), FUN = sum, drop = FALSE),
+                      c("day", "dutytype", "count"))
+  dayduty <- within(dayduty, {
+                    order <- NA
+
+                    order[day == "Sunday"]    <- "1"                   
+                    order[day == "Monday"]    <- "2"
+                    order[day == "Tuesday"]   <- "3"
+                    order[day == "Wednesday"] <- "4"
+                    order[day == "Thursday"]  <- "5"
+                    order[day == "Friday"]    <- "6"
+                    order[day == "Saturday"]  <- "7"
+                   })
+
+  radius <- sqrt(dayduty$count / pi)
+
+  symbols(dayduty$order, dayduty$dutytype, circles = radius, inches = .5, fg = "white", 
+          bg = c("red", "deepskyblue", "green3", "gold", "purple", "deeppink1", "orange"),
+          axes = F, xlim = c(0, 8), ylim = c(.5, 3.5),   
+          xlab = "Days of the Week", ylab = "Duty Type", main = "Days of the Week vs. Duty Type")
+  axis(1, at = c(0, 1, 2, 3, 4, 5, 6, 7, 8), 
+          labels = c("", "Sun", "Mon", "Tues", "Wed", "Thurs", "Fri", "Sat", ""))
+  axis(2, at = c(.5, 1, 2, 3, 3.5), labels = c("", "Straights", "Splits", "Show", ""))
+  text(dayduty$order, dayduty$dutytype, dayduty$count, cex = .75)
+
+
+
+############################   Scatterplot for hour of day and hour of shift   ##############################
+
+#create scatterplot for hour of day and hour of shift
+  dayshift         <- na.omit(acc)
+  dayshift$dectime <- ifelse(dayshift$dectime < 4, dayshift$dectime + 24, dayshift$dectime)
+
+  dev.new()
+  plot(dayshift$dectime, dayshift$dectimefromstart, pch = "+", col = "red3", frame = FALSE, axes = FALSE,
+       xlim = c(4, 28), ylim = c(0, 12),
+       xlab = "Time of Day", ylab = "Time into Shift", main = "Time of Day vs Time into Shift")
+  axis(1, at = c(seq(4, 28, by = 4)))
+  axis(2, at = c(seq(0, 12, by = 3)))
+  lines(lowess(dayshift$dectime, dayshift$dectimefromstart))
+
+
+
+############################   Scatterplot for hour of day and hour of current   ##########################
+
+#create scatterplot for hour of day and hour of current shift
+  daycurr         <- na.omit(acc)
+  daycurr$dectime <- ifelse(daycurr$dectime < 4, daycurr$dectime + 24, daycurr$dectime)
+
+  dev.new()
+  plot(daycurr$dectime, daycurr$deccurr, pch = "+", col = "red3", frame = FALSE, axes = FALSE,
+       xlim = c(4, 28), ylim = c(0, 10),
+       xlab = "Time of Day", ylab = "Time into Current Shift", main = "Time of Day vs Time into Current Shift")
+  axis(1, at = c(seq(4, 28, by = 4)))
+  axis(2, at = c(seq(0, 10, by = 2)))
+  lines(lowess(daycurr$dectime, daycurr$deccurr))
+
+
+
+############################   Scatterplot for hour of day and class letter   ##########################
+
+#create scatterplot for hour of day and class letter
+  dayclass         <- na.omit(acc)
+  dayclass$dectime <- ifelse(dayclass$dectime < 4, dayclass$dectime + 24, dayclass$dectime)
+
+  dayclass <- within(dayclass, {
+                     order <- NA
+ 
+                     order[classlet == "A"] <- 1
+                     order[classlet == "B"] <- 2
+                     order[classlet == "C"] <- 3
+                     order[classlet == "D"] <- 4
+                     order[classlet == "G"] <- 5
+                     order[classlet == "H"] <- 6
+                     order[classlet == "J"] <- 7
+                     order[classlet == "K"] <- 8
+                     order[classlet == "M"] <- 9
+                     order[classlet == "N"] <- 10
+                    })
+
+  dev.new()
+  plot(dayclass$order, dayclass$dectime, pch = "+", col = "red3", frame = FALSE, axes = FALSE,
+       xlim = c(0, 11), ylim = c(4, 28),
+       xlab = "Accident Class Letter", ylab = "Time of Day", main = "Accident Class Letter vs Time of Day")
+  axis(1, at = c(seq(0, 11, by = 1)), labels = c("", "A", "B", "C", "D", "G", "H", "J", "K", "M", "N", ""))
+  axis(2, at = c(seq(4, 28, by = 2)))
+  mean <- tapply(dayclass$dectime, dayclass$order, mean)
+ 
+  for(point in c(seq(1,10)))
+         {
+           points(x = point, y = mean[point], pch = "-", col = "black", cex = 2)
+         }
+
+  legendtext <- c("A = Intersection", 
+                  "B = Between Intersections", 
+                  "C = Rear End", 
+                  "D = In the Zone", 
+                  "G = Pedestrians", 
+                  "H = Misc. Coll.", 
+                  "J = Alighting", 
+                  "K = Onboard", 
+                  "M = Wheelchair", 
+                  "N = Other")
+  legend(7.5, 28, legendtext, cex = .75, )
