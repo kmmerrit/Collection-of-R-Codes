@@ -1,34 +1,26 @@
 #define directory and libraries
-
   setwd("J:\\Risk Management\\Kevin\\O1 - Fare Disputes")
   library(plyr)
   library(lubridate)
 
 #import complete data set
-
   inc <- read.table("Incident Analysis.csv", header=T, sep=",")
 
 #take only O1, date, and class columns from data
-
   college <- subset(inc, class == "O1",
                     select=c("date", "class"))
 
 #make date in date format for R
-
   college$date <- as.Date(college$date, "%m/%d/%Y")
 
 #create day variable
-
   college$day <- wday(college$date, label=TRUE)
 
 #create year variable
-
   college$year <- year(college$date)
 
 #create weekend variable and define based on day
-
   college <- within(college, {
-
                     weekend <- NA
 
                     weekend[college$day == "Sun"]   <- "Yes"
@@ -37,12 +29,12 @@
                     weekend[college$day == "Wed"]   <- "No"
                     weekend[college$day == "Thurs"] <- "No"
                     weekend[college$day == "Fri"]   <- "Yes"
-                    weekend[college$day == "Sat"]   <- "Yes"})
+                    weekend[college$day == "Sat"]   <- "Yes"
+                   })
 
 #create variable for insession and assign values
 
   college <- within(college, {
-
                      insession <- NA                                        #create insession variable
 
                      insession[college$weekend == "Yes"]       <- "No"      #Assign "No" to all weekend days
@@ -94,21 +86,18 @@
                    })
 
 #Assign "Yes" to all remaining non filled values
-
   college <- within(college, {
-
                     weekend[is.na(college$weekend) == TRUE]     <- "No"
-                    insession[is.na(college$insession) == TRUE] <- "Yes"})
+                    insession[is.na(college$insession) == TRUE] <- "Yes"
+                   })
 
 #convert new variables to factors
-  
   college$year      <- as.factor(college$year)
   college$day       <- as.factor(college$day)
   college$weekend   <- as.factor(college$weekend)
   college$insession <- as.factor(college$insession)
 
 #create count variable and assign 1 to all
-
   college$count     <- 1
   college1          <- setNames(aggregate(college$count,
                                 list(college$insession, college$day, college$year),  
@@ -116,6 +105,5 @@
                                 c("insession", "day", "year", "count"))
 
 #ANOVA for insession and day
-
   fit <- aov(count ~ (insession + day), data = college1)
   summary(fit)
