@@ -27,7 +27,7 @@
                quart.entry <- tkentry(tt, textvariable = quarter)                     #creates a spot for the second entry
 
                submit <- function(){                                                  #defines a function for the submit button
-                            year    <- as.numeric(tclvalue(year))                      #changes the input for year to a numeric variable
+                            year    <- as.numeric(tclvalue(year))                     #changes the input for year to a numeric variable
                            quarter <- as.character(tclvalue(quarter))                 #changes the input for quarter to a 
                                                                                       #character variable
                            assign("inpfyyear", year, envir = .GlobalEnv)              #assigns the year value to the global 
