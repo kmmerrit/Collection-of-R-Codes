@@ -1,0 +1,321 @@
+
+#set directory and libraries
+
+  setwd("J:/Risk Management/Kevin/Short Fare Analysis")                                                     # set work directory
+  library(plyr)                                                                                             # load needed packages
+  library(dplyr)
+  library(tidyr)
+  library(ggplot2)
+  library(ggrepel)
+  library(reshape)
+  library(reshape2)
+
+#import data files
+
+  fareclasses <- c("character", "factor", "factor", "factor", "factor", "numeric", "numeric",               # define type of variables
+                   "numeric", "factor", "numeric", "factor", "numeric", "numeric", "numeric", "numeric")
+  assignclass <- c("factor", "character", "character", "character", "numeric", "numeric", "numeric",        # define classes for operator assignment csv
+                   "numeric", "numeric", "numeric", "numeric") 
+  jan         <- read.csv("Jan17.csv", header = TRUE, sep = ",", colClasses = fareclasses)                  # import short fare data for January 2017
+  feb         <- read.csv("Feb17.csv", header = TRUE, sep = ",", colClasses = fareclasses)                  # import short fare data for February 2017
+  mar         <- read.csv("Mar17.csv", header = TRUE, sep = ",", colClasses = fareclasses)                  # import short fare data for March 2017
+
+  fares       <- rbind(jan, feb, mar)                                                                       # combine short fare data for all three months
+  fares       <- subset(fares, id >= 1000 & id <= 9999)                                                     # remove empnum that are incorrect
+  fares$id    <- as.factor(fares$id)                                                                        # convert ID to factor
+
+  hiredates     <- read.csv("DOB and Hire Dates.csv", header = TRUE, sep = ",", stringsAsFactors = FALSE)   # import DOB and hire dates for operators
+  names         <- read.csv("name lookup.csv",        header = TRUE, sep = ",", stringsAsFactors = FALSE)   # import names for each ID
+  passcnt       <- read.csv("boardings by hour.csv",  header = TRUE, sep = ",", stringsAsFactors = FALSE)   # import passenger count information
+  passcnt$htime <- as.factor(passcnt$htime)                                                                 # make time variable a factor
+  dutyblocks    <- read.csv("duty blocks.csv",        header = TRUE, sep = ",", stringsAsFactors = FALSE)   # import duty block information for service changes
+  opassign      <- read.csv("op assignments.csv",     header = TRUE, sep = ",", stringsAsFactors = FALSE)   # import operator assignments
+ 
+#drop unary variables, change variable types, create new variables
+  
+  fares        <- subset(fares, (route == 51 | route == 52 | route == 61) & amount < 1.25)                  # subset to only include routes 51, 52, and 61 
+                                                                                                            # as well as amounts below a 1.25
+  fares        <- separate(fares, date, c("sfdate", "temptime"), sep = " ", remove = TRUE)                  # separate the date and time and only keep the date
+  fares$sfdate <- as.Date(fares$sfdate, format = "%m/%d/%Y")                                                # format the date
+  fares$time   <- sapply(strsplit(fares$temptime, ":"),                                                     # split time character variable at colon and then 
+                          function(x) {                                                                     # user the defined function to calculate the time
+                            x <- as.numeric(x)                                                              # in decimal hours
+                            x[1] + x[2]/60
+                          }
+                         )
+  fares$htime  <- floor(fares$time)                                                                         # create variable for rounded down time
+  dropvarfares <- names(fares) %in% c("temptime", "type", "fareset", "value", "description", "stop")        # create variable to represent which variables from
+                                                                                                            # fares to drop
+  fares        <- fares[!dropvarfares]                                                                      # drop variables not needed from fares
+  fares$day    <- as.factor(weekdays(fares$sfdate))                                                         # create variable of the day of the week for each obs
+  fares$wkday  <- as.factor(ifelse(fares$day %in% c("Saturday", "Sunday"), "weekend", "weekday"))           # create variable indicating weekday or weekend
+
+  fares            <- fares[order(-fares$amount),]                                                          # order dataframe by amount
+  row.names(fares) <- 1:nrow(fares)                                                                         # rename rows from 1 to number of rows
+  fares$expamount  <- ifelse(as.numeric(rownames(fares)) <= round(.81*nrow(fares), digits = 0),             # create variable where the first 81 percent of rows
+                               fares$expamount <- 1.25,                                                     # has an expected amount of 1.25 and the remaining
+                               fares$expamount <- 0.60)                                                     # 19% have an expected amount of .60
+  fares$short      <- fares$expamount - fares$amount                                                        # create variable representing how much short
+
+  hiredates          <- separate(hiredates, serv_date, c("servdate", "del1"), sep = " ", remove = TRUE)     # separate the date and time and only keep the date
+  hiredates$servdate <- as.Date(hiredates$servdate, format = "%m/%d/%Y")                                    # format the date
+  keepvarhiredates   <- c("id", "servdate")                                                                 # create variable for which variables to keep
+  hiredates          <- hiredates[keepvarhiredates]                                                         # subset data with only needed variables
+
+  shortfares           <- merge(fares, hiredates, by = "id")                                                # merge short fare data with hire dates by oper id
+  shortfares$seniority <- as.numeric((shortfares$sfdate - shortfares$servdate)/365.25)                      # calculate the seniority of each operator
+
+  dutyblocks$bid.month <- ifelse(dutyblocks$bid.month == "Aug-17", "Aug-16", dutyblocks$bid.month)          # change Aug-17 to Aug-16 (mistake from data source)
+
+#by operator
+
+  opnames   <- names[, c(1, 2)]                                                                             # copy names dataframe with needed columns
+  operator  <- setNames(aggregate(shortfares$short, by = list(shortfares$id), FUN = mean, na.rm = TRUE),    # find the mean short fare amount for each oper 
+                          c("id", "shortavg"))
+  opercount <- setNames(as.data.frame(table(shortfares$id)), c("id", "count"))                              # create table of number of short fares by ID
+  operator  <- merge(operator, opercount, by = "id")                                                        # merge mean short fare amount and number of short fares
+  IQRrange  <- IQR(operator$count)                                                                          # find IQR for number of short fares per driver
+  cutpoint  <- as.vector(quantile(operator$count, c(.75)) + 1.5*IQRrange)                                   # calculate the point which is considered an outlier
+  operhigh  <- subset(operator, count > cutpoint)                                                           # subset to only include operators over cutpoint
+  operhigh  <- merge(operhigh, opnames, by = "id")                                                           # include the names of the operators over the cutpoint
+  operhigh  <- operhigh[order(-operhigh$count),]                                                            # order based on number of short fares
+  operhigh  <- operhigh[, c(1, 4, 3, 2)]                                                                    # reorder columns in a logical way
+  summary(opercount$count)                                                                                  # output summary info for number of short fares
+  cutpoint                                                                                                  # value of the maximum value without being an outlier
+  operhigh                                                                                                  # output operators over cutpoint
+
+#by time
+
+  times        <- setNames(as.data.frame(table(shortfares$htime)), c("htime", "sfcount"))                   # create table of time(hours) and short fare counts
+  times        <- merge(times, passcnt, by = "htime")                                                       # combine short fare counts by hour with total pass counts
+  times        <- times[,c(1:3)]                                                                            # only keep needed columns
+  times$sfperc <- times$sfcount/times$threemcnt * 100                                                       # calculate short fare percentage for each hour
+  times        <- times[c(17:22, 3:16, 1, 2),]                                                              # reorder hours in logical order
+  times                                                                                                     # output hours with their percentages
+
+# by day
+
+  days <- setNames(as.data.frame(table(shortfares$day)), c("day", "sfcount"))                               # create table of sfcounts by day
+  days <- days[c(4, 2, 6, 7, 5, 1, 3),]                                                                     # reorder the rows of days to be in order of a week
+  days$wkdycnt <- c(4445, 4445, 4445, 4445, 4445, 4237, 3206)                                               # create column for total passengers on each weekday
+  days$threemcnt <- days$wkdycnt * 3 * 4                                                                    # calculate total number of passengers in three months
+                                                                                                            # for each weekday. Four is to indicate four of each day
+                                                                                                            # each month
+  days$sfperc <- days$sfcount/days$threemcnt * 100                                                          # calculate short fare percentage
+  days <- days[, c(1, 2, 4, 5)]                                                                             # reorder columns and drop ones not needed
+  days                                                                                                      # output days with their percentages
+
+# by seniority
+
+  sen            <- shortfares                                                                              # copy shortfares data frame
+  ovrsen         <- names[, c(1, 7, 8, 11)]                                                                 # copy names data frame with needed columns
+  ovrsen         <- subset(ovrsen, pos_title == "COACH OPERATORS" & term_date == "")                        # subset to only current coach operators
+  ovrsen         <- ovrsen[, c(1, 2)]                                                                       # keep the columns which are needed
+  ovrsen$rndsen  <- floor(ovrsen$seniority)                                                                 # create variable for rounded down seniority
+  currsen        <- setNames(as.data.frame(table(ovrsen$rndsen)), c("seniority", "currcnt"))                # create tabulation table for number of current
+                                                                                                            # operators at each seniority
+  sen$rndsen     <- floor(sen$seniority)                                                                    # round seniority down in other data frame
+  sencnt         <- setNames(as.data.frame(table(sen$rndsen)), c("seniority", "sfcount"))                   # create tabulation table for number of short
+                                                                                                            # fares at each seniority
+  senfinal       <- merge(sencnt, currsen, by = "seniority")                                                # merge two data frames for sfcounts and current counts
+  senfinal$sfper <- senfinal$sfcount/senfinal$currcnt                                                       # create variable for number of short fares per person
+  senfinal       <- senfinal[order(as.numeric(senfinal$seniority)),]                                        # order seniority in a logical way
+  senfinal
+
+# operator and time
+
+  optime          <- shortfares                                                                             # copy the shortfares data frame
+  optime$plottime <- ifelse(optime$time >= 4, optime$time, optime$time + 24)                                # change times from 0 to 2 to 24 to 26 for graphing
+  keepoper        <- as.vector(operhigh$id)                                                                 # create vector of ID's from operator section
+  optime          <- subset(optime, id %in% keepoper)                                                       # only keep operators in data set from operator section
+
+  dev.new()                                                                                                 # create new plot window
+    ggplot(optime, aes(x = id, y = plottime, col = id)) +                                                   # initial plot command
+      geom_point(alpha = 0.1, stroke = 0) +                                                                             # scatter plot with opaque of 0.1
+      xlab("Employee ID Number") +                                                                          # specify x label
+      ggtitle("Employee ID Number vs Time of Day", subtitle = NULL) +                                       # specify title of graph
+      scale_y_continuous(name = "Time of Day (Military Time)", 
+                         breaks = c(4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26),                           # specify name, tick marks, labels, and limits of y axis
+                         labels = c(4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 0, 2), 
+                         limits = c(4, 26)) +        
+      theme(axis.text.x = element_text(angle = 90, hjust = 0.5, vjust = 0.5)) +                             # change text angle of x axis and adjust to be centered
+      theme(legend.position = 'none') +                                                                     # remove legend from plot
+      theme(plot.title = element_text(hjust = 0.5)) +                                                       # center plot title
+      coord_cartesian(ylim = c(5, 25))                                                                      # zoom into the graph to remove extra space
+
+# by day and time
+
+  daytime          <- shortfares                                                                            # copy shortfares dataframe
+  daytime$plottime <- ifelse(daytime$time >= 4, daytime$time, daytime$time + 24)                            # create variable for time to plot (make 0 and 1 at end of day)
+  daytime$plotday  <- factor(daytime$day, c("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday",         # redefine day factor variable in order we want in plot
+                                            "Friday", "Saturday"))
+
+  dev.new()                                                                                                 # create new plot window
+    ggplot(daytime, aes(x = plotday, y = plottime)) +                                                       # initialize plot
+      geom_jitter(alpha = 0.1, width = 0.35, height = 0, col = 'mediumblue') +                              # use jitter points for data (only in x direction)
+      xlab("Day of the Week") +                                                                             # label for X axis
+      ggtitle("Day of the Week vs. Time of Day", subtitle = NULL) +                                         # title of plot
+      scale_y_continuous(name = "Time of Day (Military Time)",                                              # redine y axis with breaks and labels wanted. also rename
+                         breaks = c(4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26),                           # axis label
+                         labels = c(4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 0, 2), 
+                         limits = c(4, 26)) + 
+      theme(plot.title = element_text(hjust = 0.5)) +                                                       # center plot title 
+      theme(legend.position = 'none') +                                                                     # remove legend
+      coord_cartesian(ylim = c(5,25))                                                                       # zoom into necessary plot area
+
+# by operator and seniority
+
+  opsen        <- shortfares                                                                                # copy the shortfares data frame
+  opsen$dummy  <- 1                                                                                         # create dummy variable to aggregate for count                                
+  opsen$rndsen <- floor(opsen$seniority)                                                                    # round seniority down for each short fare
+  opsencnt     <- setNames(aggregate(opsen$dummy, by = list(opsen$rndsen, opsen$id), FUN = sum,             # count the number of short fares by seniority and ID
+                            na.rm = TRUE), c("seniority", "id", "count"))
+  opsencnt     <- opsencnt[order(opsencnt$seniority, opsencnt$id),]                                         # order data frame by seniority and then ID
+  plotopsen    <- subset(opsencnt, seniority == 0 | seniority == 1 | seniority == 20 | seniority == 27      # only choose the seniorities which showed 80 short fares per
+                                                  | seniority == 30)                                        # operator in the seniority section
+  plotopsen    <- within(plotopsen, {                                                                       # create dummy variable for plot labels in ggplot
+                         dummy <- NA                                                                        # counts are chosen by seniority based on the intial plot
+                         dummy[seniority == '0'  & count > 200] <- 1
+                         dummy[seniority == '1'  & count > 150] <- 1
+                         dummy[seniority == '20' & count > 100] <- 1
+                         dummy[seniority == '27' & count > 100] <- 1
+                         dummy[seniority == '30' & count > 100] <- 1
+                        })
+  plotopsen[is.na(plotopsen)] <- 0                                                                          # replace NA values in data frame with zeros
+  plotopsen$seniority <- as.factor(plotopsen$seniority)                                                     # change seniority to a factor
+  opsencnt                                                                                                  # output data frame of shortfares by seniority and ID
+
+  dev.new()                                                                                                 # create new window for plot
+    ggplot(plotopsen, aes(x = seniority, y = count, col = seniority, label = id)) +                         # initialize ggplot
+      geom_point(alpha = 0.5) +                                                                             # scatter plot with opaque set to half
+      geom_text_repel(aes(label = ifelse(dummy == 1, as.character(id), ''))) +                              # create text labels based on dummy variable
+      scale_y_continuous(name = 'Number of Short Fares',                                                    # set scale, breaks, labels, and axis title for Y axis
+                         breaks = c(seq(0, 500, by = 50)),
+                         labels = c(seq(0, 500, by = 50))) +
+      xlab('Seniority') +                                                                                   # set x axis title
+      ggtitle('Number of Short Fares by Seniority and ID', subtitle = NULL) +                               # create plot title
+      facet_grid(. ~ seniority, scales = "free_x", space = "free_x", switch = 'x') +                        # create separate grids for each seniority factor level
+      theme(plot.title = element_text(hjust = 0.5)) +                                                       # center plot title
+      theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +                                # remove x axis text and tick marks
+      theme(legend.position = 'none') +                                                                     # remove legend
+      coord_cartesian(ylim = c(25, 525))                                                                    # zoom into needed part of plot
+
+
+# by operator, day, and time (2 hour increments)
+
+  convert.time <- function(df, column) {                                                                    # create function called convert time which takes a data frame
+                    temp <<- sapply(strsplit(df[, column], ":"),                                            # and column to split at the column, convert the minutes to a
+                               function(x) {                                                                # decimal. It then adds the decimal to the hour and outputs 
+                                 x <- as.numeric(x)                                                         # into a numeric vector of times
+                                 x[1] + x[2]/60
+                               }
+                             )
+                  }
+
+  opblocks <- dutyblocks
+  convert.time(opblocks, "start.time")                                                                      # use convert time function on start times
+  opblocks$start.dec <- temp                                                                                # assign decimal start times vector to data frame
+  convert.time(opblocks, "end.time")                                                                        # use convert time function on end times
+  opblocks$end.dec   <- temp                                                                                # assign decimal end times vector to data frame 
+  opblocks$bid.month <- toupper(gsub("-", "", opblocks$bid.month))                                          # remove dash from bid month and make it all upper case
+  opblocks$bid.month <- as.factor(opblocks$bid.month)                                                       # convert bid month to factor
+  opblocks$wkday     <- as.factor(opblocks$wkday)                                                           # convert week day to factor
+  opblocks           <- opblocks[, c(1, 2, 4, 5, 9, 10)]                                                    # keep columns that are needed only
+
+  opsign              <- opassign                                                                           # copy operator assignment data frame
+  opsign$bid.month    <- as.factor(substr(opsign$bid.month, 1, 5))                                          # take first five characters of bid month and store as factor
+  opsign              <- opsign[, c(-2, -3)]                                                                # drop column 2 and 3 from data frame
+  opsign.melted       <- melt(opsign, id = c("id", "bid.month"))                                            # convert data frame columns to a factor variable
+  opsign.melted       <- rename(opsign.melted, c("value" = "duty.number", "variable" = "day"))              # rename columns created from melt in the data frame
+  opsign.melted$wkday <- as.factor(ifelse(opsign.melted$day == "Saturday", "Saturday",                      # assign weekday, saturday, or sunday, based on day of the week
+                                     ifelse(opsign.melted$day == "Sunday", "Sunday", "Weekday")))           # and convert to a factor
+
+  opduty <- join(opsign.melted, opblocks, by = c("bid.month", "wkday", "duty.number"))                      # merge two data sets by bid month, weekday, and duty number
+  opduty[is.na(opduty)] <- 0                                                                                # make NA's zero since due to not working those days
+  opduty <- opduty[, c(-5)]                                                                                 # drop day variable to avoid duplicates in final data frame
+  opduty <- unique(opduty)                                                                                  # only take unique rows in opduty
+  opduty$id <- factor(opduty$id)                                                                            # turn ID into a factor
+  opduty$rdstart <- ifelse(opduty$start.dec %% 2 >= 1,                                                      # use modular arithmetic to determine if start.dec 
+                      floor(opduty$start.dec - 1),                                                          # are even or odd. If odd, subtract one and take floor. If even,
+                      floor(opduty$start.dec))                                                              # take floor of original number
+  opduty$rdend   <- ifelse(opduty$end.dec %% 2 >= 1,                                                        # use modular arithmetic to determine if end.dec is even or odd. 
+                      ceiling(opduty$end.dec),                                                              # if odd, take ceiling of end.dec and if even, add one and 
+                      ceiling(opduty$end.dec + 1))                                                          # and take ceiling
+  opduty$rdend   <- ifelse(opduty$rdend == 1 & opduty$rdstart == 0, 0, opduty$rdend)                        # if the operator isn't typically on the route, assign zero to each
+                                                                                                            # rdstart and rdend
+  
+  opday           <- shortfares                                                                             # copy short fares data frame
+  opday           <- opday[, -c(3, 5:10, 15, 17)]                                                           # drop columns which are not needed
+  opday$bid.month <- as.factor(ifelse(opday$sfdate >= as.Date("1/1/2017", format = "%m/%d/%Y")              # determine which bid each short fare occurred during
+                                      & opday$sfdate < as.Date("2/12/2017", format = "%m/%d/%Y"),           # and convert to a factor
+                                      "AUG16",
+                                      "FEB17"))
+
+  odt            <- merge(opday, opduty, by = c("id", "bid.month", "day"))                                  # combine opday and opduty by id, bid.month, and day
+  odt.freq       <- setNames(as.data.frame(table(odt$id, odt$bid.month, odt$htime, odt$day)),               # calculate number of shortfares for each id, bid.month, htime, and day
+                      c("id", "bid.month", "htime", "day", "count"))                                               
+  odt.freq$htime <- as.numeric(as.character(odt.freq$htime))                                                # change htime to a numeric vector
+
+
+  opdaytime <- function(dayblock, month) {                                                                         # create function for plot 
+                     
+                 temp              <- setNames(aggregate(odt.freq$count, by = list(odt.freq$id, odt.freq$day),     # count the number of shortfares for each id and day 
+                                        FUN = sum, na.rm = TRUE), c("id", "day", "count"))
+                 temp.ids          <- temp$id[temp$day == dayblock & temp$count > 0]                               # create vector of id's from chosen day with at least one short fare
+                 temp.ids          <- factor(temp.ids)                                                             # change vector to a factor
+                 temp.point        <- subset(odt.freq, id %in% temp.ids & day == dayblock)                         # subset table for ID's in vector with the chosen day 
+                 temp.point$htime  <- ifelse(temp.point$htime >= 4, temp.point$htime, temp.point$htime + 24)       # change the 0, 1, and 2 hours to 24, 25, and 26 for plotting
+                 temp.point        <- subset(temp.point, count > 0)                                                # subset to only include observations with at least one short fare
+                 temp.point$id     <- factor(temp.point$id)                                                        # change ID to a factor
+                 temp.point        <- subset(temp.point, bid.month == month)                                       # choose only ID's with specified bid.month
+                 temp.point        <- na.omit(temp.point)                                                          # remove missing observations
+                  
+                 temp.plot         <- merge(temp.point, opduty, by = c('id', 'bid.month', 'day'))                  # merge temp.point and opduty to by id, bid.month, and day
+                 temp.plot$id      <- as.numeric(as.character(temp.plot$id), length = 4)                           # convert ID to a numeric variable with four digits
+                 temp.plot$rdstart <- ifelse(temp.plot$rdstart >= 4, temp.plot$rdstart, temp.plot$rdstart + 24)    # convert 0, 1, and 2 for rdstart to 24, 25, and 26 for plotting
+                 temp.plot$rdend   <- ifelse(temp.plot$rdend >= 4,   temp.plot$rdend,   temp.plot$rdend + 24)      # convert 0, 1, and 2 for rdend to 24, 25, and 26 for plotting
+                 temp.plot         <- temp.plot[order(-temp.plot$rdstart, -temp.plot$id), ]                        # order temp.plot by rdstart and id
+                 temp.idlevels     <- as.character(temp.plot$id)                                                   # store the order of ID  for factor levels
+                 temp.plot$id      <- factor(temp.plot$id, levels = unique(temp.idlevels))                         # make ID in temp.plot a factor where the levels are based on order 
+                                                                                                                   # specified in temp.idlevels
+                 temp.line         <- temp.plot[!duplicated(temp.plot$id), c(1, 10, 11)]                           # create data frame for lines in plot, remove duplicated values
+                   
+                 temp.label.y <- length(unique(temp.line$id)) - 3                                                  # calculate y position of bid.month label
+                 temp.label <- paste(substr(month, 1, 3), substr(month, 4, 5), sep = " '")                         # create character string for label   
+                   
+                 dev.new()                                                                                         # create new plot window
+                   (ggplot() +                                                                                     # initial plot call
+                     geom_segment(data = temp.line, aes(x = rdstart, y = id, xend = rdend, yend = id,              # plot line segments 
+                                                        size = 1, alpha = 0.5), color = "red4") +                  # specify size, opaque, and color of lines
+                     geom_point(data = temp.plot, aes(x = htime, y = id, size = count, color = count)) +           # plot points by htime and id with the size and color based on number 
+                                                                                                                   # of short fares
+                     scale_color_gradient(low = "deepskyblue1", high = "blue4") +                                  # set color scale for points
+                     scale_x_continuous(name = "Time of Day (Military Time)",                                      # set name, breaks, labels, and limits for x axis
+                                          breaks = c(4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26), 
+                                          labels = c(4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 0, 2), 
+                                          limits = c(4, 26)) +
+                     ylab('ID Number') +                                                                           # change the Y label
+                     facet_grid(. ~ day) +                                                                         # create grid based on the day
+                     coord_cartesian(xlim = c(4.5, 25.5)) +                                                        # zoom into plot to eliminate blank space
+                     guides(size = FALSE, alpha = FALSE) +                                                         # remove legends which are not needed
+                     theme( axis.text.y = element_text(size = 7),                                                  # change size of y axis text
+                            panel.border = element_rect(color = 'black', fill = 'NA'),                             # create black border with no background color
+                            strip.text.x = element_text(color = 'black', size = 15),                               # edit top panel text color and size
+                            strip.background = element_rect(color = 'black', fill = 'deepskyblue')) +              # add black border around top panel and fill with blue color
+                     annotate('text', x = 24, y = temp.label.y, label = temp.label, col = 'red', size = 15))
+               }
+
+  opdaytime('Sunday'   , 'AUG16')                                                                                  # Plot the needed graphs
+  opdaytime('Sunday'   , 'FEB17')
+  opdaytime('Monday'   , 'AUG16')
+  opdaytime('Monday'   , 'FEB17')
+  opdaytime('Tuesday'  , 'AUG16')
+  opdaytime('Tuesday'  , 'FEB17')
+  opdaytime('Wednesday', 'AUG16')
+  opdaytime('Wednesday', 'FEB17')
+  opdaytime('Thursday' , 'AUG16')
+  opdaytime('Thursday' , 'FEB17')
+  opdaytime('Friday'   , 'AUG16')
+  opdaytime('Friday'   , 'FEB17')
+  opdaytime('Saturday' , 'AUG16')
+  opdaytime('Saturday' , 'FEB17')
