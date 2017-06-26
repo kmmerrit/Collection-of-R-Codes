@@ -1,33 +1,18 @@
-#This code was designed to allow people without coding experience to use it when I am not around. The general outline is it creates
-#a popup window for them to input some information. Once the information is input, the second part of the program will calculate
-#the numbers needed for the company. 
-
-
-#########################################################################################################################################
-#########################################################################################################################################
-####################                                                                           ##########################################
-####################   RUN THE TOP PART OF THE CODE BEFORE THE REST OF THE CODE                ##########################################
-####################                                                                           ##########################################
-#########################################################################################################################################
-#########################################################################################################################################
-
-
 
 ###############################   Create a pop up box for input   ########################################################################
 
   require(tcltk)                                                                      #loads the require tcltk package                                    
-
   myinput <- function(){                                                              #defines the overall function as myinput
-               year    <- tclVar("")                                                  #creates a variable for the name
-               quarter <- tclVar("")                                                  #creates a variable for the quarter
 
+               year        <- tclVar("")                                              #creates a variable for the name
+               quarter     <- tclVar("")                                              #creates a variable for the quarter
                tt          <- tktoplevel()                                            #creates the window being used
                tkwm.title(tt, "Current Year and Quarter")                             #gives a title to the window
                year.entry  <- tkentry(tt, textvariable = year)                        #creates a spot for the first entry
                quart.entry <- tkentry(tt, textvariable = quarter)                     #creates a spot for the second entry
 
                submit <- function(){                                                  #defines a function for the submit button
-                            year    <- as.numeric(tclvalue(year))                     #changes the input for year to a numeric variable
+                           year    <- as.numeric(tclvalue(year))                      #changes the input for year to a numeric variable
                            quarter <- as.character(tclvalue(quarter))                 #changes the input for quarter to a 
                                                                                       #character variable
                            assign("inpfyyear", year, envir = .GlobalEnv)              #assigns the year value to the global 
@@ -39,9 +24,7 @@
                submit.but <- tkbutton(tt, text = "Submit", command = submit)          #creates the submit button that stores the values 
                                                                                       #of inpfyyear and inpquart when pressed
                save.but   <- tkbutton(tt, text = "Save and Close",                    #creates the save button that destroys the 
-                                          command = function(){                       #window when pressed
-                                                               tkdestroy(tt)
-                                                    })
+                                          command = function()tkdestroy(tt))          #window when pressed
 
                tkgrid(tklabel(tt, text = "Enter the following:"),                     #creates the label above all the input boxes
                                   columnspan = 3, pady = 10)
@@ -51,76 +34,53 @@
                                   quart.entry, pady = 10, padx = 10)                  #input box
                tkgrid(submit.but, save.but, pady = 10, padx = 10)                     #puts the submit and save button in the 
                                                                                       #pop up box
-             } 
-
+               tkwait.window(tt)                                                      #wait for the window to close until running the
+             }                                                                        #rest of the code 
   myinput()                                                                           #calls the function
-
-
-
-#########################################################################################################################################
-#########################################################################################################################################
-####################                                                                           ##########################################
-####################   DO NOT RUN ANYTHING BELOW THIS LINE UNTIL THE PART ABOVE HAS BEEN RUN   ##########################################
-####################                                                                           ##########################################
-#########################################################################################################################################
-#########################################################################################################################################
-
-
 
 ##################################   Set directory, import data   ######################################################################
 
-  setwd("J:/Risk Management/KPI")                                                     #set directory
-  library(lubridate) 			                                             					      #import libraries
+  setwd("J:/Risk Management/KPI/Recurring Table")                                     #set directory
+  library(lubridate) 								      #import libraries
   library(magrittr)
   library(dplyr)   
 
   recur        <- read.csv("Recurring.csv", header = TRUE, sep = ",")                 #import data
-  recur$date   <- as.Date(recur$date, '%m/%d/%Y')                                     #convert date variable to a date
+  recur$date   <- as.Date(recur$date, '%m/%d/%Y')                                     #convert date to a date variable
   recur$empnum <- as.factor(recur$empnum)                                             #convert empnum to a factor
-
-
 
 ##################################   Create needed variables   ##########################################################################
 
   prev <- subset(recur, prev == "Y", select = c(1, 3, 6, 11))                         #create subset of data with only the preventable 
                                                                                       #accidents
   prev <- within(prev, {                                                              #separate the date into three parts
-                         year        <- year(date)
-                         month       <- month(date)
-                         day         <- day(date)
+                          year        <- year(date)
+                          month       <- month(date)
+                          day         <- day(date)
                         })
 
   prev$year   <- as.numeric(prev$year)                                                #make year a numeric variable
   prev$month  <- as.numeric(prev$month)                                               #make month a numeric variable
   prev$day    <- as.numeric(prev$day)                                                 #make day a numeric variable
-
   prev$fyyear <- ifelse(prev$month <= 6, prev$year, prev$year + 1)                    #assign the fiscal year to each accident
-
-  prev        <- within(prev, {                                                       #assign the quarter each accident
-                                                                                      #happened to each one
+  prev        <- within(prev, {                                                       #assign the quarter to each accident
                                quarter <- NA
-  
                                quarter[month >= 1 & month <= 3]    <- "Q3"
                                quarter[month >= 4 & month <= 6]    <- "Q4"
                                quarter[month >= 7 & month <= 9]    <- "Q1"
                                quarter[month >= 10 & month <= 12]  <- "Q2"
                               })
-
   prev$classletter <- substr(prev$class, 1, 1)                                        #create column for the class of each accident
-
-
 
 #################################   Calculate number of recurring accidents   #########################################################
 
   startyear  <- ifelse(inpquart == "Q2" | inpquart == "Q3" | inpquart == "Q4",        #decide which year the old preventable 
                       inpfyyear - 1, inpfyyear - 2)                                   #dataset should start at
-
   startquart <- if         (inpquart == "Q1") { "Q2"                                  #decide which quarter the old preventable 
                  } else if (inpquart == "Q2") { "Q3"                                  #datset should start at
                  } else if (inpquart == "Q3") { "Q4"
                  } else {                       "Q1"
                  }
-  
   startdate  <- if (startquart == "Q1") {                                             #set the start date for old preventable data set
                     as.Date(paste("07", "01", startyear, sep = "/"),                  
                             format = "%m/%d/%Y")
@@ -135,15 +95,12 @@
                             format = "%m/%d/%Y")
                  }
 
-
   midyear  <- ifelse(inpquart == "Q1" | inpquart == "Q2", inpfyyear - 1, inpfyyear)   #determine the year for the cutoff between 
                                                                                       #the old preventable data set and the current
                                                                                       #preventable data set
-
   middate  <- if (inpquart == "Q1") {                                                 #determine the date for the cutoff between
-                                                                                      #the old preventable data set and the current
-                    as.Date(paste("07", "01", midyear, sep = "/"),                    #preventable data set
-                            format = "%m/%d/%Y")                                              
+                    as.Date(paste("07", "01", midyear, sep = "/"),                    #the old preventable data set and the current
+                            format = "%m/%d/%Y")                                      #preventable data set                                    
                  } else if (inpquart == "Q2") { 
                     as.Date(paste("10", "01", midyear, sep = "/"),
                             format = "%m/%d/%Y")
@@ -159,8 +116,7 @@
                                                                                       #preventable data set
 
   enddate  <- if (inpquart == "Q1") {                                                 #determines the end date for the current 
-                                                                                      #preventable data set
-                    as.Date(paste("10", "01", endyear, sep = "/"),                   
+                    as.Date(paste("10", "01", endyear, sep = "/"),                    #preventable data set                   
                             format = "%m/%d/%Y")                                             
                  } else if (inpquart == "Q2") { 
                     as.Date(paste("01", "01", endyear, sep = "/"),
@@ -173,58 +129,54 @@
                             format = "%m/%d/%Y")
                  }
   
-
   oldprev  <- subset(prev, date >= startdate & date < middate)                        #takes a subset of all preventable accidents
                                                                                       #for the three previous quarters that are a 
                                                                                       #part of the rolling year for the current quarter
-
   currprev <- subset(prev, date >= middate & date < enddate)                          #takes a subset of all preventable accidents that
                                                                                       #happened in the current quarter
 
-
-
 #################   Calculate number of non-repeat, repeat, and repeat-same class   ######################################################
 
-  uniqvec        <- as.vector(unique(currprev$empnum))                                #creates a vector of the unique empnum that appear
+  uniqvec <- as.vector(unique(currprev$empnum))                                       #creates a vector of the unique empnum that appear
                                                                                       #in the current quarter of preventables
-  
-  useprev        <- subset(rbind(oldprev, currprev), empnum %in% uniqvec)             #creates a subset of the combined old and current
-                                                                                      #preventable data sets that only includes the
-                                                                                      #unique empnum that appear in the current
-                                                                                      #preventables data set
+  useold                  <- subset(oldprev, empnum %in% uniqvec)                     #subsets to only include needed empnum
+  useold$empnum           <- factor(useold$empnum)                                    #removes the factors of empnum that are no longer used
+  oldresults              <- as.data.frame(table(useold$empnum,                       #create freq table for number of times each combination
+                                                useold$classletter))                  #of empnum and class letter appear
+  colnames(oldresults)    <- c("empnum", "classlet", "oldcount")                      #rename the columns of the data frame
+  usecurr                 <- subset(currprev, empnum %in% uniqvec)                    #subsets to only include needed empnum
+  usecurr$empnum          <- factor(usecurr$empnum)                                   #removes empnum no longer used
+  currresults             <- as.data.frame(table(usecurr$empnum,                      #creates table as data frame for empnum and class
+                                                 usecurr$classletter))                #letter
+  colnames(currresults)   <- c("empnum", "classlet", "currcount")                     #renames the columns of the data frame
+  results                 <- full_join(oldresults, currresults,                       #join two data frames keeping separate new and old
+                                       by = c("empnum", "classlet"))                  #columns
+  results$empnum          <- as.factor(results$empnum)                                #change empnum variable to factor
+  results$classlet        <- as.factor(results$classlet)                              #change classlet variable to factor
+  results[is.na(results)] <- 0                                                        #replace NA's with zero
 
-  useprev$empnum <- factor(useprev$empnum)                                            #removes the factors of empnum that are no
-                                                                                      #no longer used
+  sameempnum  <- subset(results, currcount >= 2 | (currcount >= 1 & oldcount >= 1))   #create subset of observations counted for same class
+  attach(results)                                                                     
+    sameclass <- length(unique(sameempnum$empnum))                                    #count number of unique entries for same class
+  detach(results)                                                                     
+  results     <- subset(results, !(empnum %in% sameempnum$empnum))                    #remove observations counted for same class
 
-  results        <- table(useprev$empnum, useprev$classletter)                        #creates a frequency table for the number of times
-                                                                                      #each combination of empnum and class letter appear
+  diff        <- as.data.frame(results %>%                                            #create data frame of each empnum and the number of 
+                          group_by(empnum) %>%                                        #preventables regardless of class for both current and
+                             summarise_at(vars(oldcount, currcount), sum))            #old counts
+  diffempnum  <- subset(diff, currcount >= 1 & oldcount >= 1)                         #create subset of observations with diff class accidents
+  attach(diff)                                                                        
+    diffclass <- length(unique(diffempnum$empnum))                                    #count number of unique empnum in diffclass data frame
+  detach(diff)
+  results     <- subset(results, !(empnum %in% diffempnum$empnum))                    #remove diff class accidents from results data frame
+  norepeat    <- length(unique(results$empnum))                                       #check how many more unique empnum are left in results
+                                                                                      #for number of norepeat accidents
+  norempnum   <- subset(results, currcount == 1 & oldcount == 0)                      #create subset of empnum and class letter for no repeats
 
-  nonr           <- apply(results, 1, function(x)length(x[x == 1]))                   #creates a vector for the number of times 1 appears
-                                                                                      #in each row of the table
-
-  nonrepeat      <- length(nonr[nonr == 1])                                           #counts the number of 1's in the table which
-                                                                                      #represent the number of nonrepeat operators
-
-  diffclass      <- length(nonr[nonr > 1])                                            #counts the number of values greater than 1 in the
-                                                                                      #table which represents the number of repeat
-                                                                                      #operators in different classes of accidents
-
-  samec          <- apply(results, 1, function(x)length(x[x >= 2]))                   #creates vector for the number of times in each 
-                                                                                      #row a value greater than 1 appears
-
-  sameclass      <- length(samec[samec == 1])                                         #counts the number of values in the table that
-                                                                                      #are greater than 1 using the samec vector
-
-  nonrepeat                                                                           #outputs the number of nonrepeat operators
-
-  diffclass                                                                           #outputs the number of repeat opeartors in a 
-                                                                                      #different class
-
-  sameclass                                                                           #outputs the number of repeat operators in the
-                                                                                      #same class
-
-
-  
-
-  
+  norepeat                                                                            #print number of no repeat class accidents
+  diffclass                                                                           #print number of different class accidents
+  sameclass                                                                           #print number of same class accidents
+  norempnum                                                                           #print empnum and class letters of no repeat class acc
+  diffempnum                                                                          #print empnum and class letters of different class acc
+  sameempnum                                                                          #print empnum and class letters of same class accidents
 
